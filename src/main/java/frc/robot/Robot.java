@@ -85,11 +85,15 @@ import com.ctre.phoenix.motorcontrol.FeedbackDevice;
 import com.ctre.phoenix.motorcontrol.can.TalonSRX;
 import com.ctre.phoenix.motorcontrol.can.WPI_TalonSRX;
 
+import edu.wpi.first.wpilibj.CameraServer;
+
+
 public class Robot extends TimedRobot {
 
 	/** NavX */
 
 	AHRS navX = new AHRS(SPI.Port.kMXP);
+
 
 	/** Hardware */
 	WPI_TalonSRX _leftMaster = new WPI_TalonSRX(6);
@@ -113,24 +117,33 @@ public class Robot extends TimedRobot {
 	double _lockedDistance = 0;
 	double _targetAngle = 0;
 
+
+
 	/** to retrieve data from the Shuffleboad */
 	private ShuffleboardTab tab = Shuffleboard.getTab("Autonomous Testing");
 
-	private NetworkTableEntry angleEntry = tab.add("Request angle", 10000).getEntry();
-	private NetworkTableEntry positionEntry = tab.add("Requested Position", 10000).getEntry();
+	private NetworkTableEntry angleEntry = tab.add("Request angle", 0).getEntry();
+	private NetworkTableEntry positionEntry = tab.add("Requested Position", 10).getEntry();
+	private NetworkTableEntry countsPerFoot = tab.add("Counts Per Foot", Constants.COUNTS_PER_FOOT).getEntry();
+	private NetworkTableEntry countsPerDegree = tab.add("Counts Per Degree", Constants.COUNTS_PER_DEGREE).getEntry();
+
 
 	@Override
 	public void robotInit() {
 		/* Not used in this project */
+		CameraServer.getInstance().startAutomaticCapture();
+		
 	}
 	
 	@Override
 	public void teleopInit(){
 
-    _rightFollower.follow(_rightMaster);
-    _leftFollower.follow(_leftMaster);
-    _rightFollower2.follow(_rightMaster);
-    _leftFollower2.follow(_leftMaster);
+		// add the following motor controllers.
+    	_rightFollower.follow(_rightMaster);
+    	_leftFollower.follow(_leftMaster);
+    	_rightFollower2.follow(_rightMaster);
+		_leftFollower2.follow(_leftMaster);
+		
 		/* Disable all motor controllers */
 		_rightMaster.set(ControlMode.Position, 0);
 		_leftMaster.set(ControlMode.Position, 0);
@@ -281,6 +294,8 @@ public class Robot extends TimedRobot {
 		_rightMaster.configMotionCruiseVelocity(400);
 		_rightMaster.configMotionAcceleration(100);
 
+		SmartDashboard.putNumber("Test",4.0);
+
 	}
 	
 	@Override
@@ -290,10 +305,8 @@ public class Robot extends TimedRobot {
 		double turn = _gamepad.getRawAxis(4);
 		forward = Deadband(forward);
 		turn = Deadband(turn);
+
 	
-		
-		//SmartDashboard.putNumber("Forward Value", forward);
-		//SmartDashboard.putNumber("Yaw", navX.getYaw());
 		
 
 
@@ -311,11 +324,15 @@ public class Robot extends TimedRobot {
 		
 		double encoderPosition = _rightMaster.getSensorCollection().getQuadraturePosition();
 		double encoderPositionLeft = _leftMaster.getSensorCollection().getQuadraturePosition();
-
-		SmartDashboard.putNumber("Right raw Position", encoderPosition);
+	    SmartDashboard.putNumber("Right raw Position", encoderPosition);
 		SmartDashboard.putNumber("Left raw Position", encoderPositionLeft);
-		SmartDashboard.putNumber("Encoder angle", _rightMaster.getSelectedSensorPosition(1));
-		SmartDashboard.putNumber("Encoder Pos sum", _rightMaster.getSelectedSensorPosition(0));
+
+		double cpf = countsPerFoot.getDouble(245.6);
+		double cpd = countsPerDegree.getDouble(11300.0/360);
+
+
+		SmartDashboard.putNumber("angle (degrees)", _rightMaster.getSelectedSensorPosition(1)/cpd);
+		SmartDashboard.putNumber("position (feet)", _rightMaster.getSelectedSensorPosition(0)/cpf);
 		SmartDashboard.putNumber("Yaw", navX.getYaw());
 		SmartDashboard.putNumber("Speed", _rightMaster.getSelectedSensorVelocity(0));
 
@@ -328,24 +345,29 @@ public class Robot extends TimedRobot {
 		}else{
 			if (_firstCall) {
 				System.out.println("This is Drive Straight Distance with the Auxiliary PID using the difference between two encoders.");
-				System.out.println("Servo [-6, 6] rotations while also maintaining a straight heading.\n");
+				//System.out.println("Servo [-6, 6] rotations while also maintaining a straight heading.\n");
 				
 				/* Determine which slot affects which PID */
 				_rightMaster.selectProfileSlot(Constants.kSlot_Distanc, Constants.PID_PRIMARY);
 				_rightMaster.selectProfileSlot(Constants.kSlot_Turning, Constants.PID_TURN);
+				navX.reset();
 			}
 			
 			/* Calculate targets from gamepad inputs */
-			//double target_sensorUnits = forward * Constants.kSensorUnitsPerRotation * Constants.kRotationsToTravel  + _lockedDistance;
-			//double target_turn = _targetAngle;
+
 			
 			double position = positionEntry.getDouble(1000.0);  //get desired position from Shuffleboard
 			double angle = angleEntry.getDouble(0.0);  //get desired angle from Shuffleboard
+
 			/* Configured for Position Closed loop on Quad Encoders' Sum and Auxiliary PID on Quad Encoders' Difference */
 			_rightMaster.configMotionSCurveStrength(4);
 			//System.out.println("pos:"+ position);
-			_rightMaster.set(ControlMode.MotionMagic, position, DemandType.AuxPID, angle);
+
+			_rightMaster.set(ControlMode.MotionMagic, position*cpf, DemandType.AuxPID, angle*cpd);
+			//_rightMaster.set(ControlMode.MotionMagic, 1000, DemandType.AuxPID, 0);
 			_leftMaster.follow(_rightMaster, FollowerType.AuxOutput1);
+			System.out.println("MP finished?" + _rightMaster.isMotionProfileFinished());
+
 		}
 		_firstCall = false;
 	}
@@ -354,17 +376,18 @@ public class Robot extends TimedRobot {
 	void zeroSensors() {
 		_leftMaster.getSensorCollection().setQuadraturePosition(0, Constants.kTimeoutMs);
 		_rightMaster.getSensorCollection().setQuadraturePosition(0, Constants.kTimeoutMs);
-		System.out.println("[Quadrature Encoders] All sensors are zeroed.\n");
+		navX.reset();
+		System.out.println("[Quadrature Encoders] & NavX All sensors are zeroed.\n");
 	}
 	
 	/** Deadband 5 percent, used on the gamepad */
 	double Deadband(double value) {
 		/* Upper deadband */
-		if (value >= +0.1) 
+		if (value >= +0.15) 
 			return value;
 		
 		/* Lower deadband */
-		if (value <= -0.1)
+		if (value <= -0.15)
 			return value;
 		
 		/* Outside deadband */

@@ -10,6 +10,9 @@ public class Constants {
 	 */
 	public final static int kNumButtonsPlusOne = 10;
 	
+	public final static double COUNTS_PER_FOOT = 245.0;  //found empirically
+	public final static double COUNTS_PER_DEGREE = 11300.0/360/2; //empirically found 2 rotations was 11300 counts.  Divide by 2 and 3
+
 	/**
 	 * How many sensor units per rotation.
 	 * Using CTRE Magnetic Encoder.
